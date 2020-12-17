@@ -18,6 +18,7 @@
 package org.apache.shardingsphere.sql.parser.binder.metadata.schema;
 
 import com.google.common.collect.Lists;
+import javafx.util.Pair;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,12 +31,7 @@ import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -48,17 +44,17 @@ import java.util.concurrent.Future;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 @Slf4j(topic = "ShardingSphere-metadata")
 public final class SchemaMetaDataLoader {
-    
+
     private static final String TABLE_TYPE = "TABLE";
-    
+
     private static final String TABLE_NAME = "TABLE_NAME";
-    
+
     /**
      * Load schema meta data.
      *
-     * @param dataSource data source
+     * @param dataSource         data source
      * @param maxConnectionCount count of max connections permitted to use for this query
-     * @param databaseType database type
+     * @param databaseType       database type
      * @return schema meta data
      * @throws SQLException SQL exception
      */
@@ -76,7 +72,46 @@ public final class SchemaMetaDataLoader {
                 ? load(dataSource.getConnection(), tableGroups.get(0), databaseType) : asyncLoad(dataSource, maxConnectionCount, tableNames, tableGroups, databaseType);
         return new SchemaMetaData(tableMetaDataMap);
     }
-    
+
+    /**
+     * Load schema meta data.
+     *
+     * @param dataSource         data source
+     * @param maxConnectionCount count of max connections permitted to use for this query
+     * @param databaseType       database type
+     * @return schema meta data
+     * @throws SQLException SQL exception
+     */
+    public static SchemaMetaData loadByShardingRule(final DataSource dataSource, final int maxConnectionCount, final String databaseType, Map<String, Collection<String>> shardingTables) throws SQLException {
+        List<String> tableNames;
+        try (Connection connection = dataSource.getConnection()) {
+            tableNames = loadAllTableNames(connection, databaseType);
+        }
+        log.info("Loading {} tables' meta data.", tableNames.size());
+        if (0 == tableNames.size()) {
+            return new SchemaMetaData(Collections.emptyMap());
+        }
+        Map<String, LinkedList<String>> firstNodeTable2ShardingTables = new ConcurrentHashMap<>();
+        for (String logicTable : shardingTables.keySet()) {
+            LinkedList<String> nodeTables = new LinkedList<>(shardingTables.get(logicTable));
+            String firstNodeTable = nodeTables.removeFirst();
+            tableNames.removeAll(nodeTables);
+            firstNodeTable2ShardingTables.put(firstNodeTable, nodeTables);
+        }
+        List<List<String>> tableGroups = Lists.partition(tableNames, Math.max(tableNames.size() / maxConnectionCount, 1));
+        Map<String, TableMetaData> tableMetaDataMap = 1 == tableGroups.size()
+                ? load(dataSource.getConnection(), tableGroups.get(0), databaseType) : asyncLoad(dataSource, maxConnectionCount, tableNames, tableGroups, databaseType);
+        Set<String> firstNodeTables = firstNodeTable2ShardingTables.keySet();
+        for (String firstNodeTable : firstNodeTables) {
+            TableMetaData tableMetaData = tableMetaDataMap.get(firstNodeTable);
+            LinkedList<String> nodeTables = firstNodeTable2ShardingTables.get(firstNodeTable);
+            for (String nodeTable : nodeTables) {
+                tableMetaDataMap.put(nodeTable, new TableMetaData(tableMetaData.getColumns().values(), tableMetaData.getIndexes().values()));
+            }
+        }
+        return new SchemaMetaData(tableMetaDataMap);
+    }
+
     private static Map<String, TableMetaData> load(final Connection connection, final Collection<String> tables, final String databaseType) throws SQLException {
         try (Connection con = connection) {
             Map<String, TableMetaData> result = new LinkedHashMap<>();
@@ -86,7 +121,7 @@ public final class SchemaMetaDataLoader {
             return result;
         }
     }
-    
+
     private static List<String> loadAllTableNames(final Connection connection, final String databaseType) throws SQLException {
         List<String> result = new LinkedList<>();
         try (ResultSet resultSet = connection.getMetaData().getTables(connection.getCatalog(), JdbcUtil.getSchema(connection, databaseType), null, new String[]{TABLE_TYPE})) {
@@ -99,11 +134,11 @@ public final class SchemaMetaDataLoader {
         }
         return result;
     }
-    
+
     private static boolean isSystemTable(final String table) {
         return table.contains("$") || table.contains("/");
     }
-    
+
     private static Map<String, TableMetaData> asyncLoad(final DataSource dataSource, final int maxConnectionCount, final List<String> tableNames,
                                                         final List<List<String>> tableGroups, final String databaseType) throws SQLException {
         Map<String, TableMetaData> result = new ConcurrentHashMap<>(tableNames.size(), 1);
