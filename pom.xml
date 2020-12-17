@@ -941,8 +941,8 @@
     </mailingLists>
     <distributionManagement>
         <repository>
-            <id>mynexus-wjj</id>
-            <url>http://nexus.wjjzst.com/repository/maven-wjj</url>
+            <id>releases</id>
+            <url>http://ci.pc.com.cn/nexus/content/repositories/releases</url>
         </repository>
     </distributionManagement>
 </project>

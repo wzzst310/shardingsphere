@@ -104,6 +104,10 @@ public final class SchemaMetaDataLoader {
         Set<String> firstNodeTables = firstNodeTable2ShardingTables.keySet();
         for (String firstNodeTable : firstNodeTables) {
             TableMetaData tableMetaData = tableMetaDataMap.get(firstNodeTable);
+            if (tableMetaData == null) {
+                log.warn("{}表在数据库中尚未创建", firstNodeTable);
+                continue;
+            }
             LinkedList<String> nodeTables = firstNodeTable2ShardingTables.get(firstNodeTable);
             for (String nodeTable : nodeTables) {
                 tableMetaDataMap.put(nodeTable, new TableMetaData(tableMetaData.getColumns().values(), tableMetaData.getIndexes().values()));
