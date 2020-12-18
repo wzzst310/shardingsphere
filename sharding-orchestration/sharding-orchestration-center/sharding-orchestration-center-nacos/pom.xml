@@ -20,7 +20,7 @@
     <parent>
         <groupId>org.apache.shardingsphere</groupId>
         <artifactId>sharding-orchestration-center</artifactId>
-        <version>4.1.1.PCGROUP</version>
+        <version>4.1.1.PCGROUP.v1</version>
     </parent>
     <artifactId>sharding-orchestration-center-nacos</artifactId>
     <name>${project.artifactId}</name>
